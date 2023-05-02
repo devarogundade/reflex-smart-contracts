@@ -18,6 +18,8 @@ contract RfDAOFactory =
     record state = { owner: address
                    , ownersDao: ownersDao
                    , daos: list(address)
+                   , token_model: IRfDAOToken
+                   , reward_model: IRfDAOReward
                    , dao_model: IRfDAO
                    }
 
@@ -27,11 +29,16 @@ contract RfDAOFactory =
     // and events that will be emitted on changes
     datatype event = DAOCreated(address, address, int)
 
-    stateful entrypoint init(dao_model: IRfDAO) = { owner = Call.caller
-                                                  , ownersDao = {}
-                                                  , daos = []
-                                                  , dao_model = dao_model
-                                                  }
+    stateful entrypoint init( token_model: IRfDAOToken
+                            , reward_model: IRfDAOReward
+                            , dao_model: IRfDAO
+                            ) = { owner = Call.caller
+                                , ownersDao = {}
+                                , daos = []
+                                , dao_model = dao_model
+                                , token_model = token_model
+                                , reward_model = reward_model
+                                }
 
     stateful entrypoint create_dao( name: string
                                   , summary: string
@@ -51,8 +58,6 @@ contract RfDAOFactory =
                                   , metaTransaction: bool
                                   , reward: int
                                   , allocations: map(address, int)
-                                  , iRfDAOToken: IRfDAOToken
-                                  , iRfDAOReward: IRfDAOReward
                                   ) = 
             let owner = Call.caller
 
@@ -77,8 +82,8 @@ contract RfDAOFactory =
                                          , reward
                                          , owner
                                          , allocations
-                                         , iRfDAOToken
-                                         , iRfDAOReward
+                                         , state.token_model
+                                         , state.reward_model
                                          )
             
             // if map has not been initialized for owner
@@ -86,15 +91,8 @@ contract RfDAOFactory =
                 put(state{ ownersDao[owner] = [] })
 
             // update state variable
-            put(state{ ownersDao[owner] = List.insert_at (0
-                                                         , dao.address
-                                                         , state.ownersDao[owner]) 
-                                                         })
-
-            put(state{ daos = List.insert_at( 0
-                                            , dao.address
-                                            , state.daos) 
-                                            })
+            put(state{ ownersDao[owner] = dao.address::state.ownersDao[owner] }) 
+            put(state{ daos = dao.address::state.daos })
 
             Chain.event(DAOCreated(owner, dao.address, Chain.timestamp))
 

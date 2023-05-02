@@ -247,8 +247,8 @@ contract RfDAO =
                                                                           })
 
         // transfer vote token to dao contract
-        let daoToken : IRfDAOToken = Option.force(state.daoToken)
-        daoToken.transfer_allowance(voter, Contract.address, amount)
+        // let daoToken : IRfDAOToken = Option.force(state.daoToken)
+        // daoToken.transfer_allowance(voter, Contract.address, amount)
 
     stateful entrypoint execute_proposal( proposalId: int
                                         ) = 
