@@ -1,0 +1,23 @@
+contract interface IRfDAO = 
+    stateful entrypoint init: ( string
+                            , string
+                            , string
+                            , option(string)
+                            , option(string)
+                            , string
+                            , string
+                            , int
+                            , int
+                            , int
+                            , int
+                            , int
+                            , map(address, int)
+                            , int
+                            , bool
+                            , bool
+                            , int
+                            , address
+                            , map(address, int)
+                            , IRfDAOToken
+                            , IRfDAOReward
+                            ) => unit

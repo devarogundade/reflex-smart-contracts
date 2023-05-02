@@ -1,0 +1,295 @@
+@compiler >= 6
+
+include "Option.aes"
+include "String.aes"
+include "List.aes"
+include "Set.aes"
+include "./interfaces/IRfDAOToken.aes"
+include "./interfaces/IRfDAOReward.aes"
+
+@compiler >= 6
+
+contract RfDAO =
+
+    record state = {
+        owner: address, // owner of dao
+        metadata: metadata, // dao metadata
+        membership: membership, // dao membership
+        governance: governance, // dao governance
+        daoToken: option(IRfDAOToken), // dao token
+        proposals: proposals, // dao proposals
+        proposalId: int, // dao proposal tracker
+        token_model: IRfDAOToken,
+        reward_model: IRfDAOReward
+        }
+    
+    record metadata = {
+        name: string, // dao name
+        summary: string, // dao summary
+        subdomain: string, // dao unique readable identity
+        links: option(string), // json of dao links
+        logo: option(string) // path to dao logo uri
+        }
+
+    record membership = {
+        proposalCreation: int, // who can create a proposal, 0 - dao token holders, 1 - multisig members 
+        participation: int, // who can participate in proposal voting, 0 - dao token holders, 1 - multisig members 
+        minCreation: int, // minimum amount of dao tokens required to create a proposal
+        multisigMembers: map(address, int)
+        }
+
+    record governance = {
+        threshold: int, // percentage
+        minParticipation: int, // min numbers of dao tokens require to vote
+        minDuration: int, // min duration of any proposal
+        earlyExecution: bool, // executing proposal as soon as it has pass threshold
+        metaTransaction: bool, // suport for dao meta transaction
+        daoReward: option(IRfDAOReward) // dao reward type, none of nft c/a
+        }
+
+    record proposal = {
+        distributed: bool, // whelther token has been redistributed to votes or not
+        executed: bool, // whelther proposal has been executed
+        startedOn: int, // proposal voting start time
+        endedOn: int, // proposal voting end time
+        title: string, // proposal title
+        summary: string, // proposal summary
+        createdOn: int, // time created
+        owner: address, // proposal creator
+        votes: map(address, int), // voter -> number of tokens
+        approves: list(address), // list of voters that agreed
+        disapproves: list(address) // list of voter that disagreed
+        }
+
+    // custom type
+    type proposals = map(int, proposal)
+
+    stateful entrypoint init( name: string
+                            , summary: string
+                            , subdomain: string
+                            , links: option(string)
+                            , logo: option(string)
+                            , tokenName: string
+                            , tokenSymbol: string
+                            , proposalCreation:int
+                            , participation: int
+                            , minCreation: int
+                            , threshold: int
+                            , minParticipation: int
+                            , multisigMembers: map(address, int)
+                            , minDuration: int
+                            , earlyExecution: bool
+                            , metaTransaction: bool
+                            , reward: int
+                            , owner: address
+                            , allocations: map(address, int)
+                            , token_model: IRfDAOToken
+                            , reward_model: IRfDAOReward
+                            ) =
+
+        let daoToken : option(IRfDAOToken) =
+            if (participation == 0)
+                // create dao token
+                let token = Chain.clone( ref = token_model
+                                       , tokenName
+                                       , 18
+                                       , tokenSymbol
+                                       , owner
+                                       , allocations
+                                       )
+                Some(token)
+            else
+                None
+
+        // create dao reward
+        let daoReward : option(IRfDAOReward) =
+            if (reward == 1)
+                let reward = Chain.clone( ref = reward_model
+                                        , String.concat(tokenName, " Reward")
+                                        , String.concat("r", tokenSymbol)
+                                        , 1000000000000
+                                        )
+                Some(reward)
+            else
+                None
+        
+        // set state
+        {
+            owner = owner,
+            metadata = {
+                name = name,
+                summary = summary,
+                subdomain = subdomain,
+                links = links,
+                logo = logo
+            },
+            membership = {
+                proposalCreation = proposalCreation,
+                participation = participation,
+                minCreation = 0,
+                multisigMembers = multisigMembers
+            },
+            governance = {
+                threshold = threshold,
+                minParticipation = minParticipation,
+                minDuration = minDuration,
+                earlyExecution = earlyExecution,
+                metaTransaction = metaTransaction,
+                daoReward = daoReward
+            },
+            daoToken = daoToken,
+            proposals = {},
+            proposalId = 1,
+            token_model = token_model,
+            reward_model = reward_model
+            }
+
+    /// Create a new proposal
+    stateful entrypoint create_proposal( title: string
+                                       , summary: string
+                                       , startedOn: int
+                                       , endedOn: int
+                                       ) = 
+        let creator = Call.caller
+        
+        // skip validation if it's dao owner
+        if (creator != state.owner)
+            if (state.membership.participation == 0)
+                // check if they have enough dao tokens
+                let daoToken : IRfDAOToken = Option.force(state.daoToken)
+                let amount : option(int) = daoToken.balance(creator)
+                let requiredAmount : int = state.governance.minParticipation
+                require(Option.default(0, amount) >= requiredAmount, "Not enough dao tokens")
+            else
+                // check if they have enough multisig power
+                let power : int = state.membership.multisigMembers[creator]
+                let requiredPower : int = state.governance.minParticipation
+                require(power >= requiredPower, "Not a multisig member")
+
+        // creare the dao object
+        let proposal: proposal = {
+            distributed = false,
+            executed = false,
+            startedOn = startedOn,
+            endedOn = endedOn,
+            title = title,
+            summary = summary,
+            createdOn = Chain.timestamp,
+            votes = {},
+            owner = Call.caller,
+            approves = [],
+            disapproves = []
+            }
+
+        // update state variables
+        put(state{proposals[state.proposalId] = proposal})
+        put(state{proposalId = state.proposalId + 1})
+
+    /// Refung tokens
+    /// Refund votes dao tokens after proposal voting ended
+    stateful entrypoint distribute_proposal_tokens(proposalId: int) =
+
+        let proposal: proposal = state.proposals[proposalId]
+
+        require(Chain.timestamp > proposal.endedOn, "Proposal has not ended")
+        require(!proposal.distributed, "Reward has already been distributed")
+
+        let voters : list(address) = 
+            List.merge((approve, disapprove) => approve != disapprove
+                      , proposal.approves
+                      , proposal.disapproves
+                      )
+       
+        let daoToken : IRfDAOToken = Option.force(state.daoToken)
+        // List.foreach(voters, (voter) => daoToken.transfer(voter, proposal.votes[voter]) )
+
+        // update state variables
+        put(state{proposals[state.proposalId].distributed = true})
+
+    /// End proposal
+    /// Distribute dao tokens back to voters
+    stateful entrypoint end_proposal_early( proposalId: int
+                                          ) =
+        require_owner()
+        
+        let proposal: proposal = state.proposals[proposalId]
+        require_not_active(proposal)
+
+        // update state variables
+        put(state{proposals[state.proposalId].endedOn = Chain.timestamp})
+
+    /// Vote proposal
+    /// Deduct dao tokens from voters
+    stateful entrypoint vote_proposal( proposalId: int
+                                     , amount: int
+                                     , cast: bool
+                                     ) = 
+        require(amount >= state.governance.minParticipation, "Not enough tokens")
+
+        let proposal: proposal = state.proposals[proposalId]
+        require_active(proposal)
+
+        let voter = Call.caller
+
+        require(!Map.member(voter, proposal.votes), "Already casted vote")
+        put(state{proposals[proposalId].votes[voter] = amount})
+
+        // update state variables
+        if (cast)
+            put(state{ proposals[proposalId].approves = List.insert_at( 0
+                                                                       , voter
+                                                                       , state.proposals[proposalId].approves) 
+                                                                       })
+        else
+            put(state{ proposals[proposalId].disapproves = List.insert_at( 0
+                                                                          , voter
+                                                                          , state.proposals[proposalId].disapproves) 
+                                                                          })
+
+        // transfer vote token to dao contract
+        let daoToken : IRfDAOToken = Option.force(state.daoToken)
+        daoToken.transfer_allowance(voter, Contract.address, amount)
+
+    stateful entrypoint execute_proposal( proposalId: int
+                                        ) = 
+        require_owner()
+
+        let proposal: proposal = state.proposals[proposalId]
+        if (state.governance.earlyExecution)
+            require_threshold(proposal)
+        else
+            require_threshold_2(proposal)
+
+        // update state variables
+        put(state{proposals[proposalId].executed = true})
+
+    // to do
+    function require_threshold(proposal: proposal) =
+        require(true, "")
+
+    // to do
+    function require_threshold_2(proposal: proposal) =
+        require(true, "")
+
+    function require_owner() =
+        require(Call.caller == state.owner, "ONLY_OWNER_CALL_ALLOWED")
+
+    function require_active(proposal: proposal) =
+        require(Chain.timestamp > proposal.startedOn, "PROPOSAL_NOT_STARTED")
+        require(Chain.timestamp < proposal.endedOn, "PROPOSAL_ENDED")
+
+    function require_not_active(proposal: proposal) =
+        require(Chain.timestamp < proposal.startedOn, "PROPOSAL_HAS_STARTED")
+        require(Chain.timestamp > proposal.endedOn, "PROPOSAL_HAS_NOT_ENDED")
+
+    entrypoint daoToken() : option(IRfDAOToken) = state.daoToken
+
+    entrypoint daoReward() : option(IRfDAOReward) = state.governance.daoReward
+
+    entrypoint metadata() : metadata = state.metadata
+    
+    entrypoint governance() : governance = state.governance
+
+    entrypoint proposals(proposalId: int) : proposal =
+        state.proposals[proposalId]
+
