@@ -6,6 +6,8 @@ include "List.aes"
 include "Pair.aes"
 include "Set.aes"
 
+include "./lib/Utils.aes"
+
 include "./interfaces/IAEX141NFTReceiver.aes"
 include "./interfaces/IRfDAOReward.aes"
 include "./interfaces/IRfDAOToken.aes"
