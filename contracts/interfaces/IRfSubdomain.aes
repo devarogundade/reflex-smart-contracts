@@ -1,0 +1,9 @@
+contract interface IRfSubdomain =
+    record subdomain = {
+        name: string,
+        last_update: int
+        }
+
+    entrypoint getSubdomain: (address) => subdomain
+
+    stateful entrypoint register: (string) => unit

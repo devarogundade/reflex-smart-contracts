@@ -3,8 +3,6 @@ contract interface IRfDAOToken =
 
     record meta_info = { name : string , symbol : string , decimals : int }
 
-    entrypoint init: (string, int, string, address, map(address, int)) => void
-
     entrypoint meta_info: () => meta_info
     entrypoint total_supply: () => int
     entrypoint balance: (address) => option(int)

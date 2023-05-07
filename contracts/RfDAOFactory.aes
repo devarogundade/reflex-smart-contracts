@@ -5,25 +5,34 @@ include "String.aes"
 include "List.aes"
 include "Pair.aes"
 include "Set.aes"
-include "Utils.aes"
-include "./interfaces/IAEX141NFTReceiver.aes"
-include "./interfaces/IRfDAOToken.aes"
-include "./interfaces/IRfDAOReward.aes"
-include "./interfaces/IRfDAO.aes"
 
-/// Reflex DAO Contract
+include "./interfaces/IAEX141NFTReceiver.aes"
+include "./interfaces/IRfDAOReward.aes"
+include "./interfaces/IRfDAOToken.aes"
+include "./interfaces/IRfDAO.aes"
+include "./interfaces/IRfSubdomain.aes"
+
+// Reflex DAO Contract
 /// @title - RfDAOFactory
 contract RfDAOFactory =
 
     record state = { owner: address
                    , ownersDao: ownersDao
-                   , daos: list(address)
+                   , daos: map(address, dao)
                    , token_model: IRfDAOToken
                    , reward_model: IRfDAOReward
                    , dao_model: IRfDAO
+                   , rfSubdomain: IRfSubdomain
                    }
 
-    type ownersDao = map(address, list(address))
+    record dao = { name: string
+                 , summary: string
+                 , logo: option(string)
+                 , subdomain: string
+                 , participation: int
+                 }
+
+    type ownersDao = map(address, list(IRfDAO))
 
     // Declaration and structure of datatype event
     // and events that will be emitted on changes
@@ -32,12 +41,14 @@ contract RfDAOFactory =
     stateful entrypoint init( token_model: IRfDAOToken
                             , reward_model: IRfDAOReward
                             , dao_model: IRfDAO
+                            , rfSubdomain: IRfSubdomain
                             ) = { owner = Call.caller
                                 , ownersDao = {}
-                                , daos = []
+                                , daos = {}
                                 , dao_model = dao_model
                                 , token_model = token_model
                                 , reward_model = reward_model
+                                , rfSubdomain = rfSubdomain
                                 }
 
     stateful entrypoint create_dao( name: string
@@ -55,11 +66,14 @@ contract RfDAOFactory =
                                   , multisigMembers: map(address, int)
                                   , minDuration: int
                                   , earlyExecution: bool
-                                  , metaTransaction: bool
+                                  , metaTrx: bool
                                   , reward: int
                                   , allocations: map(address, int)
                                   ) = 
             let owner = Call.caller
+
+            /// register subdomain
+            state.rfSubdomain.register(subdomain)
 
             /// create dao instance
             let dao: IRfDAO = Chain.clone( ref = state.dao_model 
@@ -75,32 +89,36 @@ contract RfDAOFactory =
                                          , minCreation
                                          , threshold
                                          , minParticipation
-                                         , multisigMembers
                                          , minDuration
                                          , earlyExecution
-                                         , metaTransaction
+                                         , metaTrx
                                          , reward
                                          , owner
-                                         , allocations
                                          , state.token_model
                                          , state.reward_model
                                          )
+
+            dao.allocate(allocations)
+            dao.multisig(multisigMembers)
             
             // if map has not been initialized for owner
             if (!Map.member(owner, state.ownersDao))
                 put(state{ ownersDao[owner] = [] })
 
             // update state variable
-            put(state{ ownersDao[owner] = dao.address::state.ownersDao[owner] }) 
-            put(state{ daos = dao.address::state.daos })
+            put(state{ ownersDao[owner] = dao::state.ownersDao[owner] }) 
+            put(state{ daos[dao.address] = {
+                    name = name,
+                    summary = summary,
+                    logo = logo,
+                    subdomain = subdomain,
+                    participation = participation
+                    }
+                })
 
             Chain.event(DAOCreated(owner, dao.address, Chain.timestamp))
-
-    entrypoint get_owners_dao(owner: address): list(address) = 
-        state.ownersDao[owner]
-
-    entrypoint get_daos(): list(address) = 
-        state.daos
+    
+    entrypoint get_state(): state = state
 
     function require_owner() =
         require(Call.caller == state.owner, "ONLY_OWNER_CALL_ALLOWED")

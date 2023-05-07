@@ -1,23 +1,36 @@
 contract interface IRfDAO = 
-    stateful entrypoint init: ( string
-                            , string
-                            , string
-                            , option(string)
-                            , option(string)
-                            , string
-                            , string
-                            , int
-                            , int
-                            , int
-                            , int
-                            , int
-                            , map(address, int)
-                            , int
-                            , bool
-                            , bool
-                            , int
-                            , address
-                            , map(address, int)
-                            , IRfDAOToken
-                            , IRfDAOReward
-                            ) => unit
+    
+    record metadata = {
+        name: string, // dao name
+        summary: string, // dao summary
+        subdomain: string, // dao unique readable identity
+        links: option(string), // json of dao links
+        logo: option(string) // path to dao logo uri
+        }
+
+    record membership = {
+        proposalCreation: int, // who can create a proposal, 0 - dao token holders, 1 - multisig members 
+        participation: int, // who can participate in proposal voting, 0 - dao token holders, 1 - multisig members 
+        minCreation: int, // minimum amount of dao tokens required to create a proposal
+        multisigMembers: map(address, int)
+        }
+
+    record governance = {
+        threshold: int, // percentage
+        minParticipation: int, // min numbers of dao tokens require to vote
+        minDuration: int, // min duration of any proposal
+        earlyExecution: bool, // executing proposal as soon as it has pass threshold
+        metaTrx: bool, // Meta Transactions
+        metaTrxBal: int, // suport for dao meta transaction
+        daoReward: option(IRfDAOReward) // dao reward type, none or nft c/a
+        }
+
+    entrypoint metadata: () => metadata 
+    entrypoint governance: () => governance
+    entrypoint membership: () => membership
+
+    stateful entrypoint init: (string, string, string, option(string), option(string), string
+                              , string, int, int, int, int, int, int, bool, bool, int, address
+                              , IRfDAOToken, IRfDAOReward) => unit
+    stateful entrypoint allocate: (map(address, int)) => unit
+    stateful entrypoint multisig: (map(address, int)) => unit

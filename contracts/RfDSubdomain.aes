@@ -1,0 +1,40 @@
+@compiler >= 6
+
+include "String.aes"
+
+contract RfDSubdomain =
+
+    record state = {
+        subdomains: map(address, subdomain),
+        availability: map(string, bool)
+        }
+    
+    record subdomain = {
+        name: string,
+        last_update: int
+        }
+
+    stateful entrypoint init() = {
+        subdomains = {},
+        availability = {}
+        }
+
+    entrypoint get_state(): state = state
+
+    entrypoint getSubdomain(owner: address): subdomain = 
+        state.subdomains[owner]
+
+    stateful entrypoint register(name: string) = 
+        let owner = Call.caller
+        require(!Map.member(owner, state.subdomains), "Already have a subdomain")
+        require(!Map.member(name, state.availability), "Name already choosen")
+        let trailing = ".dao.chain"
+        let subdomain: subdomain = {
+            name = String.concat(name, trailing),
+            last_update = Chain.timestamp
+            }
+        put(state{ subdomains[owner] = subdomain })
+        put(state{ availability[name] = false })
+
+    // TODO
+    // stateful entrypoint transfer()

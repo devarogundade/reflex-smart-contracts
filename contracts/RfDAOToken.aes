@@ -3,7 +3,7 @@
 include "Option.aes"
 include "String.aes"
 include "List.aes"
-include "Pair.aes"
+include "Set.aes"
 
 /// Fungible token with all the extensions - burn, mint, allowances
 contract RfDAOToken =
@@ -15,7 +15,8 @@ contract RfDAOToken =
         , balances     : balances     // balances for each account
         , meta_info    : meta_info    // token meta info (name, symbol, decimals)
         , allowances   : allowances   // owner of account approves the transfer of an amount to another account
-        , swapped      : map(address, int) }
+        , swapped      : map(address, int)
+        , allocated    : bool }
 
     // This is the meta-information record type
     record meta_info =
@@ -47,29 +48,35 @@ contract RfDAOToken =
     // Create a fungible token with
     // the following `name` `symbol` and `decimals`
     // and set the inital smart contract state
-    entrypoint init(name: string, decimals: int, symbol: string, owner: address, allocations: map(address, int)) =
+    entrypoint init(name: string, decimals: int, symbol: string) =
         // If the `name` lenght is less than 1 symbol abort the execution
         require(String.length(name) >= 1, "STRING_TOO_SHORT_NAME")
         // If the `symbol` length is less than 1 symbol abort the execution
         require(String.length(symbol) >= 1, "STRING_TOO_SHORT_SYMBOL")
         // If the provided value for `decimals` is negative abort the execution
         require_non_negative_value(decimals)
-        
-        let wallets : list(address * int) = Map.to_list(allocations)
-        let tokens : list(int) = List.map((wallet) => Pair.snd(wallet), wallets)
-        let initial_supply = List.sum(tokens)
 
+        let owner = Contract.creator
+        
         { 
             owner = owner,
             total_supply = 0,
-            balances = allocations,
+            balances = {},
             meta_info = { name = name
                         , symbol = symbol 
                         , decimals = decimals 
                         },
             allowances = {},
-            swapped = {}
+            swapped = {},
+            allocated = false
             }
+
+    stateful entrypoint allocate(allocations: map(address, int)) =
+        require(!state.allocated, "Already allocated")
+        let wallets : list(address * int) = Map.to_list(allocations)
+        let tokens : list(int) = List.map((wallet) => Pair.snd(wallet), wallets)
+        let initial_supply = List.sum(tokens)
+        put(state{ balances = allocations, total_supply = initial_supply, allocated = true })
 
     // Get the token meta info
     entrypoint meta_info() : meta_info =
@@ -86,6 +93,8 @@ contract RfDAOToken =
     // Get the balances state
     entrypoint balances() : balances =
         state.balances
+
+    entrypoint get_state() : state = state
 
     // Get balance for address of `owner`
     // returns option(int)
@@ -226,3 +235,4 @@ contract RfDAOToken =
         require_non_negative_value(new_allowance)
         put(state{ allowances[allowance_accounts] = new_allowance })
         Chain.event(Allowance(allowance_accounts.from_account, allowance_accounts.for_account, new_allowance))
+

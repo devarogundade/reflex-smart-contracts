@@ -3,7 +3,16 @@
 include "Option.aes"
 include "String.aes"
 include "List.aes"
-include "Pair.aes"
+include "Set.aes"
+
+namespace Utils =
+    function bool_to_string(v: bool): string =
+        switch (v)
+            true => "true"
+            false => "false"
+
+contract interface IAEX141NFTReceiver = 
+    entrypoint on_aex141_received : (option(address), int, option(string)) => bool
 
 contract RfDAOReward =
 
@@ -70,6 +79,8 @@ contract RfDAOReward =
 
     entrypoint total_supply() : int =
         state.total_supply
+
+    entrypoint get_state() : state = state
 
     entrypoint balance(owner: address) : option(int) =
         Map.lookup(owner, state.balances)
@@ -222,3 +233,4 @@ contract RfDAOReward =
                 Some(val) => (true, val)
         else
             (false, false)
+
