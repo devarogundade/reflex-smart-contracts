@@ -14,7 +14,7 @@ include "./interfaces/IRfDAOToken.aes"
 include "./interfaces/IRfDAO.aes"
 include "./interfaces/IRfSubdomain.aes"
 
-// Reflex DAO Contract
+/// Reflex DAO Contract
 /// @title - RfDAOFactory
 contract RfDAOFactory =
 

@@ -7,8 +7,6 @@ include "Set.aes"
 include "./interfaces/IRfDAOToken.aes"
 include "./interfaces/IRfDAOReward.aes"
 
-@compiler >= 6
-
 contract RfDAO =
 
     record state = {
@@ -18,6 +16,7 @@ contract RfDAO =
         governance: governance, // dao governance
         daoToken: option(IRfDAOToken), // dao token
         proposals: proposals, // dao proposals
+        treasure: treasure, // dao treasure
         proposalId: int, // dao proposal tracker
         token_model: IRfDAOToken,
         reward_model: IRfDAOReward
@@ -38,13 +37,28 @@ contract RfDAO =
         multisigMembers: map(address, int)
         }
 
+    record treasure = {
+        balance: int,
+        locked: int,
+        allIn: int,
+        allOut: int,
+        history: list(treasure_history)
+        }
+
+    record treasure_history = {
+        summary: string,
+        timestamp: int,
+        amount: int
+        }
+
     record governance = {
         threshold: int, // percentage
         minParticipation: int, // min numbers of dao tokens require to vote
         minDuration: int, // min duration of any proposal
         earlyExecution: bool, // executing proposal as soon as it has pass threshold
-        metaTransaction: bool, // suport for dao meta transaction
-        daoReward: option(IRfDAOReward) // dao reward type, none of nft c/a
+        metaTrx: bool,
+        metaTrxBal: int, // suport for dao meta transaction
+        daoReward: option(IRfDAOReward) // dao reward type, none or nft c/a
         }
 
     record proposal = {
@@ -58,8 +72,17 @@ contract RfDAO =
         owner: address, // proposal creator
         votes: map(address, int), // voter -> number of tokens
         approves: list(address), // list of voters that agreed
-        disapproves: list(address) // list of voter that disagreed
+        disapproves: list(address), // list of voter that disagreed
+        treasureAmount: int
         }
+
+    datatype event =
+        Distribute(address, int, int)
+        | DAOCreated(address, address, int)
+        | DAOMemberAdded(address, int)
+        | ProposalCreated(int, int)
+        | ProposalVote(address, bool, int)
+        | ProposalExecuted(int, int)
 
     // custom type
     type proposals = map(int, proposal)
@@ -76,16 +99,15 @@ contract RfDAO =
                             , minCreation: int
                             , threshold: int
                             , minParticipation: int
-                            , multisigMembers: map(address, int)
                             , minDuration: int
                             , earlyExecution: bool
-                            , metaTransaction: bool
+                            , metaTrx: bool
                             , reward: int
                             , owner: address
-                            , allocations: map(address, int)
                             , token_model: IRfDAOToken
                             , reward_model: IRfDAOReward
                             ) =
+        require(threshold > 0 && threshold < 101, "Invalid threshold")
 
         let daoToken : option(IRfDAOToken) =
             if (participation == 0)
@@ -94,8 +116,6 @@ contract RfDAO =
                                        , tokenName
                                        , 18
                                        , tokenSymbol
-                                       , owner
-                                       , allocations
                                        )
                 Some(token)
             else
@@ -107,11 +127,13 @@ contract RfDAO =
                 let reward = Chain.clone( ref = reward_model
                                         , String.concat(tokenName, " Reward")
                                         , String.concat("r", tokenSymbol)
-                                        , 1000000000000
+                                        , 1000000000000000
                                         )
                 Some(reward)
             else
                 None
+
+        Chain.event(DAOCreated(Contract.address, owner, Chain.timestamp))
         
         // set state
         {
@@ -127,30 +149,57 @@ contract RfDAO =
                 proposalCreation = proposalCreation,
                 participation = participation,
                 minCreation = 0,
-                multisigMembers = multisigMembers
+                multisigMembers = {}
             },
             governance = {
                 threshold = threshold,
                 minParticipation = minParticipation,
                 minDuration = minDuration,
                 earlyExecution = earlyExecution,
-                metaTransaction = metaTransaction,
+                metaTrx = metaTrx,
+                metaTrxBal = 0,
                 daoReward = daoReward
             },
             daoToken = daoToken,
             proposals = {},
+            treasure = {
+                balance = 0,
+                locked = 0,
+                allIn = 0,
+                allOut = 0,
+                history = []
+            },
             proposalId = 1,
             token_model = token_model,
             reward_model = reward_model
             }
 
+    stateful entrypoint allocate(allocations: map(address, int)) =
+        if (Option.is_some(state.daoToken))
+            Option.force(state.daoToken).allocate(allocations)
+
+    stateful entrypoint multisig(members: map(address, int)) =
+        put(state{ membership.multisigMembers = members })
+
     /// Create a new proposal
     stateful entrypoint create_proposal( title: string
                                        , summary: string
+                                       , treasureAmount: int
                                        , startedOn: int
                                        , endedOn: int
+                                       , gasless: bool
                                        ) = 
         let creator = Call.caller
+
+        require(state.treasure.balance >= treasureAmount, "Not enough treasure")
+        require(endedOn - startedOn >= (state.governance.minDuration), "Not enough duration")
+
+        let gas: int = Call.gas_price
+        if (gasless && state.governance.metaTrx) 
+            if(state.governance.metaTrxBal > gas)
+                put(state { governance.metaTrxBal = state.governance.metaTrxBal - gas })
+            else
+                abort("Insufficient gas bal for meta trx")
         
         // skip validation if it's dao owner
         if (creator != state.owner)
@@ -178,16 +227,22 @@ contract RfDAO =
             votes = {},
             owner = Call.caller,
             approves = [],
-            disapproves = []
+            disapproves = [],
+            treasureAmount = treasureAmount
             }
 
         // update state variables
         put(state{proposals[state.proposalId] = proposal})
-        put(state{proposalId = state.proposalId + 1})
+        Chain.event(ProposalCreated(state.proposalId, Chain.timestamp))
 
-    /// Refung tokens
+        put(state{proposalId = state.proposalId + 1})
+        put(state{treasure.locked = state.treasure.locked + treasureAmount})
+        put(state{treasure.balance = state.treasure.balance - treasureAmount})
+
+    /// Refund tokens
     /// Refund votes dao tokens after proposal voting ended
     stateful entrypoint distribute_proposal_tokens(proposalId: int) =
+        require(state.membership.participation == 0, "Tokens not supported")
 
         let proposal: proposal = state.proposals[proposalId]
 
@@ -201,19 +256,48 @@ contract RfDAO =
                       )
        
         let daoToken : IRfDAOToken = Option.force(state.daoToken)
-        // List.foreach(voters, (voter) => daoToken.transfer(voter, proposal.votes[voter]) )
+        List.foreach(voters, (voter) => 
+            let amount: int = proposal.votes[voter]
+            daoToken.transfer(voter, amount))
+
+        // update state variables
+        put(state{proposals[state.proposalId].distributed = true})
+
+    /// Refund tokens
+    /// Refund votes dao tokens after proposal voting ended
+    stateful entrypoint distribute_proposal_powers(proposalId: int) =
+        require(state.membership.participation == 1, "Powers not supported")
+
+        let proposal: proposal = state.proposals[proposalId]
+
+        require(Chain.timestamp > proposal.endedOn, "Proposal has not ended")
+        require(!proposal.distributed, "Reward has already been distributed")
+
+        let voters : list(address) = 
+            List.merge((approve, disapprove) => approve != disapprove
+                      , proposal.approves
+                      , proposal.disapproves
+                      )
+     
+        List.foreach(voters, (voter) =>
+            let balance: int = state.membership.multisigMembers[voter]
+            let amount: int = proposal.votes[voter]
+            put(state{ membership.multisigMembers[voter] = balance + amount }))
 
         // update state variables
         put(state{proposals[state.proposalId].distributed = true})
 
     /// End proposal
     /// Distribute dao tokens back to voters
-    stateful entrypoint end_proposal_early( proposalId: int
-                                          ) =
+    stateful entrypoint end_proposal_early(proposalId: int) =
         require_owner()
         
         let proposal: proposal = state.proposals[proposalId]
-        require_not_active(proposal)
+        require_active(proposal)
+
+        if (proposal.treasureAmount > 0)
+            put(state{ treasure.balance = state.treasure.balance + proposal.treasureAmount })
+            put(state{ treasure.balance = state.treasure.locked - proposal.treasureAmount })
 
         // update state variables
         put(state{proposals[state.proposalId].endedOn = Chain.timestamp})
@@ -223,73 +307,156 @@ contract RfDAO =
     stateful entrypoint vote_proposal( proposalId: int
                                      , amount: int
                                      , cast: bool
+                                     , gasless: bool
                                      ) = 
-        require(amount >= state.governance.minParticipation, "Not enough tokens")
+        let voter = Call.caller
+
+        if (state.membership.participation == 0)
+            require(amount >= state.governance.minParticipation, "Not enough tokens/powers")
+
+        // if (Option.is_some(state.governance.daoReward))
+        //     let daoReward: IRfDAOReward = Option.force(state.governance.daoReward)
+        //     let metadata: option(IRfDAOReward.metadata) = Some(daoReward.MetadataMap({}))
+        //     let data: option(string) = Some("")
+        //     daoReward.mint(voter, metadata, data)
 
         let proposal: proposal = state.proposals[proposalId]
         require_active(proposal)
 
-        let voter = Call.caller
+        let gas: int = Call.gas_price
+        if (gasless && state.governance.metaTrx) 
+            if(state.governance.metaTrxBal > gas)
+                put(state { governance.metaTrxBal = state.governance.metaTrxBal - gas })
+            else
+                abort("Insufficient gas bal for meta trx")
 
         require(!Map.member(voter, proposal.votes), "Already casted vote")
-        put(state{proposals[proposalId].votes[voter] = amount})
+        
+        put(state{ proposals[proposalId].votes[voter] = amount })
+
+        // transfer vote token to dao contract
+        if (state.membership.participation == 0)
+            let daoToken: IRfDAOToken = Option.force(state.daoToken)
+            daoToken.transfer_allowance(voter, Contract.address, amount)
+        else
+            let balance: int = state.membership.multisigMembers[voter] 
+            put(state{ membership.multisigMembers[voter] = balance - amount })
 
         // update state variables
         if (cast)
-            put(state{ proposals[proposalId].approves = List.insert_at( 0
-                                                                       , voter
-                                                                       , state.proposals[proposalId].approves) 
-                                                                       })
+            put(state{ proposals[proposalId].approves = List.insert_at( 
+                    0, voter, state.proposals[proposalId].approves) 
+                })
         else
-            put(state{ proposals[proposalId].disapproves = List.insert_at( 0
-                                                                          , voter
-                                                                          , state.proposals[proposalId].disapproves) 
-                                                                          })
+            put(state{ proposals[proposalId].disapproves = List.insert_at( 
+                    0, voter, state.proposals[proposalId].disapproves) 
+                })
 
-        // transfer vote token to dao contract
-        // let daoToken : IRfDAOToken = Option.force(state.daoToken)
-        // daoToken.transfer_allowance(voter, Contract.address, amount)
+        Chain.event(ProposalVote(voter, cast, proposalId))
 
-    stateful entrypoint execute_proposal( proposalId: int
-                                        ) = 
+
+    //
+    stateful entrypoint execute_proposal(proposalId: int, summary: string) = 
         require_owner()
 
         let proposal: proposal = state.proposals[proposalId]
-        if (state.governance.earlyExecution)
-            require_threshold(proposal)
+        require(calc_threshold(proposal) >= state.governance.threshold, "Threshold not enough")
+
+        if (!state.governance.earlyExecution)
+            require_not_active(proposal)
+
+        let treasureAmount: int = proposal.treasureAmount
+
+        if (treasureAmount > 0 && state.treasure.locked >= treasureAmount)
+            Chain.spend(state.owner, proposal.treasureAmount)
+            put(state{ treasure.locked = state.treasure.locked - treasureAmount })
+            put(state { treasure.allOut = state.treasure.allOut + treasureAmount })
+
+        let history: treasure_history = {
+            summary = summary,
+            timestamp = Chain.timestamp,
+            amount = treasureAmount
+            }
+
+        put(state{ treasure.history = history::state.treasure.history })
+        put(state{ proposals[proposalId].executed = true })
+
+        Chain.event(ProposalExecuted(proposalId, Chain.timestamp))
+
+    payable stateful entrypoint topup_metatx()  =
+        require_owner()
+        require(state.governance.metaTrx, "Does not support meta transaction")
+
+        let amount : int =  Call.value
+        require(amount > 0, "Must have a value $gt zero")
+
+        // send fee to owner wallet
+        Chain.spend(state.owner, amount)
+
+        put(state { governance.metaTrxBal = state.governance.metaTrxBal + amount })
+
+    payable stateful entrypoint topup_treasure(summary: string)  =
+        require_owner()
+
+        let amount : int =  Call.value
+        require(amount > 0, "Must have a value $gt zero")
+
+        let history: treasure_history = {
+            summary = summary,
+            timestamp = Chain.timestamp,
+            amount = amount
+            }
+
+        put(state{ treasure.history = history::state.treasure.history })
+        put(state { treasure.balance = state.treasure.balance + amount })
+        put(state { treasure.allIn = state.treasure.allIn + amount })
+
+    stateful entrypoint addDAOMember(wallet: address, value: int) =
+        require_owner()
+
+        if (state.membership.participation == 0)
+            let daoToken : IRfDAOToken = Option.force(state.daoToken)
+            require(Option.default(0, daoToken.balance(wallet)) == 0, "Already a member")
+            daoToken.mint(wallet, value)
         else
-            require_threshold_2(proposal)
+            require(!Map.member(wallet, state.membership.multisigMembers), "Already a member")
+            put(state { membership.multisigMembers[wallet] = value })
 
-        // update state variables
-        put(state{proposals[proposalId].executed = true})
+        Chain.event(DAOMemberAdded(wallet, value))
 
-    // to do
-    function require_threshold(proposal: proposal) =
-        require(true, "")
+    // TODO
+    // stateful entrypoint deleteDAOMember(wallet: address) =
 
-    // to do
-    function require_threshold_2(proposal: proposal) =
-        require(true, "")
+    // TODO
+    // stateful entrypoint updateDAOMember(wallet: address, value: int) =
+
+    function calc_threshold(proposal: proposal) : int =
+        let positves: int = List.length(proposal.approves)
+        let negatives: int = List.length(proposal.disapproves)
+        ((positves / (positves + negatives)) * 100)
 
     function require_owner() =
         require(Call.caller == state.owner, "ONLY_OWNER_CALL_ALLOWED")
 
     function require_active(proposal: proposal) =
-        require(Chain.timestamp > proposal.startedOn, "PROPOSAL_NOT_STARTED")
-        require(Chain.timestamp < proposal.endedOn, "PROPOSAL_ENDED")
+        require(Chain.timestamp > proposal.startedOn 
+            && Chain.timestamp < proposal.endedOn
+            , "PROPOSAL_NOT_IS_ACTIVE")
 
     function require_not_active(proposal: proposal) =
-        require(Chain.timestamp < proposal.startedOn, "PROPOSAL_HAS_STARTED")
-        require(Chain.timestamp > proposal.endedOn, "PROPOSAL_HAS_NOT_ENDED")
+        require(Chain.timestamp < proposal.startedOn 
+            || Chain.timestamp > proposal.endedOn
+            , "PROPOSAL_IS_ACTIVE")
 
-    entrypoint daoToken() : option(IRfDAOToken) = state.daoToken
+    entrypoint daoToken() = state.daoToken
 
-    entrypoint daoReward() : option(IRfDAOReward) = state.governance.daoReward
+    entrypoint daoReward() = state.governance.daoReward
 
-    entrypoint metadata() : metadata = state.metadata
-    
-    entrypoint governance() : governance = state.governance
+    entrypoint metadata() = state.metadata
 
-    entrypoint proposals(proposalId: int) : proposal =
-        state.proposals[proposalId]
+    entrypoint governance() = state.governance
+
+    entrypoint membership() = state.membership
+
+    entrypoint get_state(): state = state
 
