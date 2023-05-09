@@ -41,6 +41,10 @@ Run a gasless organization for your members by paying gas fees upfront for them.
 
 ## Sneak peaks
 
+![Screenshot 2023-05-06 195220](https://github.com/devarogundade/reflex-smart-contracts/assets/81397790/b29dc810-7c8a-489e-b6cb-1cd928fa2bfe)
+![Screenshot 2023-05-07 071910](https://github.com/devarogundade/reflex-smart-contracts/assets/81397790/4d039d29-b959-478b-8cb0-f2351365e4e7)
+![Screenshot 2023-05-07 091643](https://github.com/devarogundade/reflex-smart-contracts/assets/81397790/1f1c6fce-ab06-4f3d-a070-863ad983f4db)
+
 [checkout full demo here](https://reflex-protocol.netlify.app)
 
 ## Development
