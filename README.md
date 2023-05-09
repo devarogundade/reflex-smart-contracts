@@ -20,18 +20,23 @@ Treasury management on Reflex is a way Organizations can transparently fund or s
 ## Features
 
 - **Decentralized**
+
 Eliminate single points of failure by building on æternity distributed networks.
 
 - **Permissionless**
+
 Remove barriers with globally accessible and non-discriminating infrastructure.
 
 - **Trustless**
+
 Enforce DAOs decisions with smart contracts, removing the need for human intervention.
 
 - **Transparent**
+
 Keep your organization's record immutable. Transactions are cryptographically verified, non-editable, and publicly accessible.
 
 - **Gasless**
+
 Run a gasless organization for your members by paying gas fees upfront for them.
 
 ## Sneak peaks
