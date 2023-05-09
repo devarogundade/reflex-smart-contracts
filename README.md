@@ -47,7 +47,7 @@ Run a gasless organization for your members by paying gas fees upfront for them.
 
 ## Stacks
  | Smart contract | Frontend | Cloud services |
- |--|--|--| -- |--|
+ |--|--|--|
  | aeProject | Vuejs | Netlify |
  | Docker | AeSDK ||
  
