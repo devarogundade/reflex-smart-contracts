@@ -16,7 +16,7 @@ Treasury management on Reflex is a way Organizations can transparently fund or s
 
 
 # Flow diagram
-![Group 1601](https://github.com/devarogundade/reflex-smart-contracts/assets/81397790/1286f8f9-3b9e-4148-98c8-cbb376553cf2)
+![Group 1601 (2)](https://github.com/devarogundade/reflex-smart-contracts/assets/81397790/b39f7fee-5a8b-4d1a-815a-b6aee27a8e54)
 
 ## Features
 
