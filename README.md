@@ -49,6 +49,10 @@ Run a gasless organization for your members by paying gas fees upfront for them.
 [checkout full demo here](https://reflex-protocol.netlify.app)
 
 ## Development
+`npm install`
+`aeproject env`
+`aeproject env --info`
+`aeproject test`
 
 ## Stacks
  | Smart contract | Frontend | Cloud services |
