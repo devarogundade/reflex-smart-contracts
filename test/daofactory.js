@@ -7,7 +7,7 @@ const rewardSource = utils.getContractContent('./contracts/RfDAOReward.aes');
 const daoSource = utils.getContractContent('./contracts/RfDAO.aes');
 const factorySource = utils.getContractContent('./contracts/RfDAOFactory.aes');
 
-describe('Factory DAO contract', () => {
+describe('DAO contracts', () => {
     let aeSdk
     let sudomainContract, tokenContract, rewardContract, daoContract, factoryContract
 
