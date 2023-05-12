@@ -12,7 +12,7 @@ Reflex helps organizations to reward their DAO community and participants with n
 Treasury management on Reflex is a way Organizations can transparently fund or spend from their projects treasure allocation alongside with DAO members decision and approval.
 
 ## Links
-[website](https://reflex-protocol.netlify.app) | [devpost](https://devpost.com/software/reflex-protocol)
+[website](https://reflex-protocol.netlify.app) | [devpost](https://devpost.com/software/reflex-protocol) | [demo](https://youtu.be/x75egnHqi3g)
 
 
 # Flow diagram
@@ -49,6 +49,21 @@ Run a gasless organization for your members by paying gas fees upfront for them.
 [checkout full demo here](https://reflex-protocol.netlify.app)
 
 ## Development
+```
+npm install
+```
+
+```
+aeproject env
+```
+
+```
+aeproject env --info
+```
+
+```
+aeproject test
+```
 
 ## Stacks
  | Smart contract | Frontend | Cloud services |
