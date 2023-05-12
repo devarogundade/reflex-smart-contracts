@@ -86,6 +86,7 @@ contract RfDAO =
         | ProposalExecuted(int, int)
 
     // custom type
+    datatype voteOption = Abstain | Agree | Disagree
     type proposals = map(int, proposal)
 
     stateful entrypoint init( name: string
