@@ -74,9 +74,6 @@ contract RfDAOFactory =
                                   ) = 
             let owner = Call.caller
 
-            /// register subdomain
-            state.rfSubdomain.register(subdomain)
-
             /// create dao instance
             let dao: IRfDAO = Chain.clone( ref = state.dao_model 
                                          , name
@@ -98,6 +95,7 @@ contract RfDAOFactory =
                                          , owner
                                          , state.token_model
                                          , state.reward_model
+                                         , state.rfSubdomain
                                          )
 
             dao.allocate(allocations)
